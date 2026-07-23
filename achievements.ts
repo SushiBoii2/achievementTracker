@@ -4,21 +4,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-// ─────────────────────────────────────────────────────────────────────────
-// This file is DATA ONLY - it defines every achievement the tracker knows
-// about. See README.md for a full explanation of which of the ~420
-// achievements from the original spec are included here and which were
-// skipped (and why - mostly because Discord's client simply does not
-// expose the data needed, e.g. "top 1% of users globally", "a solar
-// eclipse is visible from your location", or anything about OTHER users'
-// actions/servers you don't have insight into).
-//
-// Every achievement has a `stat` (a counter key tracked in dataStore.ts)
-// and a `goal`, OR is `manual: true` meaning it's unlocked by bespoke logic
-// living directly in index.tsx (things like exact-timestamp achievements,
-// account-age achievements, or secret "gotcha" achievements).
-// ─────────────────────────────────────────────────────────────────────────
-
 export type Tier =
     | "bronze"
     | "silver"
@@ -32,16 +17,13 @@ export type Tier =
 export interface Achievement {
     id: string;
     tier: Tier;
-    /** true = this is a "-secret" variant of its tier (hidden until unlocked, shown with a "???" silhouette) */
     secret?: boolean;
     category: string;
     name: string;
     description: string;
     flavor: string;
-    /** counter key in the stats object this achievement tracks. Omit if manual */
     stat?: string;
     goal?: number;
-    /** unlocked via bespoke logic elsewhere instead of a simple counter threshold */
     manual?: boolean;
 }
 
@@ -83,7 +65,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "power_of_two", tier: "silver", category: "Messaging", name: "Power of Two", description: "Send your 2,048th lifetime message.", flavor: "Binary appreciates your efforts.", manual: true },
     { id: "the_observer", tier: "gold", category: "Messaging", name: "The Observer", description: "Read 50,000 messages without sending one.", flavor: "Sometimes watching is enough.", manual: true },
 
-    // ── TIME-EXACT (manual, checked on every outgoing message) ─────────
+    // ── TIME-EXACT ─────────────────────────────────────────────────────
     { id: "lucky_seven", tier: "gold", category: "Time", name: "Lucky Seven", description: "Send a message at exactly 07:07:07 local time.", flavor: "Perfect timing is its own reward.", manual: true },
     { id: "high_noon", tier: "gold", category: "Time", name: "High Noon", description: "Send a message at exactly 12:00:00 PM.", flavor: "Right on the dot.", manual: true },
     { id: "last_second", tier: "gold", category: "Time", name: "Last Second", description: "Send a message at 11:59:59 PM.", flavor: "Just made it.", manual: true },
@@ -99,7 +81,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "the_365_club", tier: "platinum", category: "Time", name: "365 Club", description: "Log in every day for one full year.", flavor: "A perfect streak.", stat: "loginStreak", goal: 365 },
     { id: "eternal_routine", tier: "mythic", category: "Time", name: "Eternal Routine", description: "Log in every day for 10 consecutive years.", flavor: "Habit became history.", stat: "loginStreak", goal: 3650 },
 
-    // ── ACCOUNT AGE (manual, derived from the Discord snowflake - always accurate) ──
+    // ── ACCOUNT AGE ─────────────────────────────────────────────────────
     { id: "anniversary", tier: "bronze", category: "Time", name: "Anniversary", description: "Own your Discord account for 1 year.", flavor: "Time flies when notifications never stop.", manual: true },
     { id: "discord_elder", tier: "platinum", category: "Time", name: "Discord Elder", description: "Own your Discord account for 10 years.", flavor: "You've witnessed many UI redesigns.", manual: true },
     { id: "living_history", tier: "platinum", category: "Time", name: "Living History", description: "Own your Discord account for 15 years.", flavor: "You've witnessed generations of memes.", manual: true },
@@ -152,6 +134,9 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "group_chat", tier: "silver", category: "Social", name: "Group Chat", description: "Create your first Group DM.", flavor: "The chaos has multiple participants now.", stat: "groupDMsCreated", goal: 1 },
     { id: "profile_complete", tier: "silver", category: "Social", name: "Profile Complete", description: "Fill out every editable section of your profile.", flavor: "First impressions matter.", manual: true },
     { id: "recognizable", tier: "gold", category: "Social", name: "Recognizable", description: "Use the same avatar for one full year.", flavor: "People know it's you before reading your name.", manual: true },
+    { id: "meet_the_creator", tier: "ascendant", category: "Social", name: "Meet the creator", description: "Who is this?", flavor: "You found the source.", manual: true },
+    { id: "autism_attack", tier: "hidden", secret: true, category: "Social", name: "Autism Attack!", description: "Have Kevin and Ekjot both added. The negative energies create a positive...", flavor: "Double trouble.", manual: true },
+    { id: "oh_hell_no", tier: "bronze", secret: true, category: "Social", name: "Oh hell no. Not this guy...", description: "Have the late, big-eyebrowed, meanie added (niche reference)", flavor: "Choices were made.", manual: true },
 
     // ── THREADS / POLLS / MISC ──────────────────────────────────────
     { id: "thread_explorer", tier: "bronze", category: "Messaging", name: "Thread Explorer", description: "Participate in 25 threads.", flavor: "Some conversations deserve their own lane.", stat: "uniqueThreadsParticipated", goal: 25 },
@@ -159,7 +144,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "poll_voter", tier: "bronze", category: "Messaging", name: "Poll Voter", description: "Vote in 50 polls.", flavor: "Democracy, one click at a time.", stat: "pollsVoted", goal: 50 },
     { id: "poll_creator", tier: "silver", category: "Messaging", name: "Poll Creator", description: "Create 100 polls.", flavor: "Let the people decide.", stat: "pollsCreated", goal: 100 },
 
-    // ── SECRET / HIDDEN (manual, event-correlation based) ─────────────
+    // ── SECRET / HIDDEN ───────────────────────────────────────────────
     { id: "oops", tier: "bronze", secret: true, category: "Secret", name: "Oops...", description: "Delete a message within 3 seconds of sending it.", flavor: "We've all typed first and thought second.", manual: true },
     { id: "ghost_ping", tier: "silver", secret: true, category: "Secret", name: "Ghost Ping", description: "Ping someone, then delete the message before they could reasonably have read it.", flavor: "Did they imagine it?", manual: true },
     { id: "echo", tier: "silver", secret: true, category: "Secret", name: "Echo", description: "Be the first person to react to your own message.", flavor: "Confidence is a fascinating thing.", manual: true },
@@ -170,7 +155,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "friday_feeling", tier: "bronze", secret: true, category: "Secret", name: "Friday Feeling", description: "Send your first message on a Friday the 13th.", flavor: "Just a normal day... probably.", manual: true },
     { id: "clockwork", tier: "gold", secret: true, category: "Secret", name: "Clockwork", description: "Send a message at exactly the same second on five consecutive days.", flavor: "Remarkably precise.", manual: true },
 
-    // ── HIDDEN meta / completion (manual, computed from other unlocks) ──
+    // ── HIDDEN meta / completion ──────────────────────────────────────
     { id: "completionist", tier: "ascendant", category: "Meta", name: "The Completionist", description: "Unlock every trackable achievement in this plugin.", flavor: "One final mystery remains.", manual: true },
     { id: "the_discordian", tier: "transcendent", category: "Meta", name: "The Discordian", description: "Unlock every achievement, including every hidden one.", flavor: "You didn't just use Discord. You became part of its history.", manual: true },
     { id: "halfway_there", tier: "platinum", category: "Meta", name: "Halfway There", description: "Unlock half of all achievements.", flavor: "You've climbed halfway up the mountain.", manual: true },

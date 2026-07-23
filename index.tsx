@@ -11,7 +11,7 @@ import { GuildStore, RelationshipStore, UserStore } from "@webpack/common";
 import { AchievementsModal } from "./components/AchievementsModal";
 import { AchievementToolbarIcon } from "./components/ToolbarIcon";
 import { store } from "./dataStore";
-import { settings } from "./settings";
+import { keybindRecordingState, settings } from "./settings";
 
 const DISCORD_EPOCH = 1420070400000;
 
@@ -24,8 +24,6 @@ function yearsSince(date: Date) {
     return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
 }
 
-// Recent-message cache used for secret/correlation-based achievements
-// (Oops, Ghost Ping, Wrong Window, Double Take, Clockwork, Echo)
 interface RecentMsg {
     id: string;
     channelId: string;
@@ -34,12 +32,12 @@ interface RecentMsg {
     hadMention: boolean;
     reactedByOther: boolean;
 }
-const recentOwnMessages = new Map<string, RecentMsg>(); // id -> msg
-const contentHistory = new Map<string, number[]>(); // content -> timestamps[] (for Double Take)
-const clockworkSeconds: number[] = []; // last few days' send-second-of-minute, for Clockwork
+const recentOwnMessages = new Map<string, RecentMsg>();
+const contentHistory = new Map<string, number[]>();
+const clockworkSeconds: number[] = [];
 let lastClockworkDay = "";
 
-let voiceStartTimes = new Map<string, number>(); // channelId -> join time, for self
+let voiceStartTimes = new Map<string, number>();
 let streamStartTime: number | null = null;
 
 function self() {
@@ -59,7 +57,7 @@ function checkTimeExactAchievements(date: Date) {
 
     if (h >= 2 && h < 5) {
         const day = date.toISOString().slice(0, 10);
-        store.addUnique("seenThreadIds", `nightowl-${day}`, "nightOwlDays"); // reuse generic unique-list mechanism
+        store.addUnique("seenThreadIds", `nightowl-${day}`, "nightOwlDays");
     }
     if (h < 6) {
         const day = date.toISOString().slice(0, 10);
@@ -70,7 +68,6 @@ function checkTimeExactAchievements(date: Date) {
         store.addUnique("seenThreadIds", `midnight-${day}`, "midnightDays");
     }
 
-    // Clockwork: same second-of-minute on 5 consecutive days
     const today = date.toISOString().slice(0, 10);
     if (lastClockworkDay !== today) {
         lastClockworkDay = today;
@@ -93,6 +90,43 @@ function checkAccountAgeAchievements() {
     if (years >= 20) { store.unlock("forever_here"); store.unlock("the_veteran"); }
 }
 
+function checkUserRelationshipAchievements() {
+    const me = self();
+    if (!me) return;
+
+    const creatorId = "1524021529782780045";
+    const userA = "1265514129066688629";
+    const userB = "946294744089255956";
+    const userBigEyebrow = "1063984916183916564";
+
+    // Obtain list of friend IDs across different Discord RelationshipStore implementations
+    const friendIds = new Set<string>();
+
+    if (typeof RelationshipStore.getFriendIDs === "function") {
+        for (const id of RelationshipStore.getFriendIDs()) friendIds.add(id);
+    } else if (typeof RelationshipStore.getRelationships === "function") {
+        const rels = RelationshipStore.getRelationships() ?? {};
+        for (const [id, type] of Object.entries(rels)) {
+            if (type === 1) friendIds.add(id); // 1 = Friend
+        }
+    }
+
+    // 1) Meet the Creator
+    if (me.id === creatorId || friendIds.has(creatorId)) {
+        store.unlock("meet_the_creator");
+    }
+
+    // 2) Autism Attack! - True if both users are added as friends
+    if (friendIds.has(userA) && friendIds.has(userB)) {
+        store.unlock("autism_attack");
+    }
+
+    // 3) Oh hell no. Not this guy...
+    if (friendIds.has(userBigEyebrow)) {
+        store.unlock("oh_hell_no");
+    }
+}
+
 function onMessageCreate({ message, optimistic }: any) {
     if (!message?.author) return;
     const me = self();
@@ -100,7 +134,6 @@ function onMessageCreate({ message, optimistic }: any) {
     const isOwn = message.author.id === me.id;
 
     if (isOwn) {
-        // avoid double counting optimistic + confirmed dispatch for the same message
         const key = message.nonce ?? message.id;
         if (recentOwnMessages.has(String(key)) && !optimistic) return;
 
@@ -125,17 +158,14 @@ function onMessageCreate({ message, optimistic }: any) {
         }
         if (message.poll) store.bump("pollsCreated");
 
-        // unique emoji usage from custom emoji syntax <a:name:id> or <:name:id>
         const emojiMatches = (message.content ?? "").match(/<a?:\w+:\d+>|\p{Emoji_Presentation}/gu) ?? [];
         for (const e of emojiMatches) store.addUnique("seenEmojis", e, "uniqueEmojisUsed");
-
-        // Only-emoji message streak for "Universal Language" style tracking omitted (needs 25 in a row context; low value)
 
         recentOwnMessages.set(String(message.id), {
             id: message.id, channelId: message.channel_id, content: message.content ?? "",
             ts: Date.now(), hadMention: (message.mentions?.length ?? 0) > 0, reactedByOther: false,
         });
-        // Double Take: same content ~1 year apart
+
         const contentKey = (message.content ?? "").trim();
         if (contentKey.length > 0) {
             const arr = contentHistory.get(contentKey) ?? [];
@@ -149,7 +179,6 @@ function onMessageCreate({ message, optimistic }: any) {
 
         if (message.channel_id && message.thread) store.bump("threadsCreated");
 
-        // trim cache
         if (recentOwnMessages.size > 500) {
             const oldestKey = recentOwnMessages.keys().next().value;
             if (oldestKey) recentOwnMessages.delete(oldestKey);
@@ -158,7 +187,6 @@ function onMessageCreate({ message, optimistic }: any) {
         if (message.mentions?.some((u: any) => u.id === me.id)) {
             store.bump("mentionsReceived");
         }
-        // "The Observer": track total messages seen while never having sent one
         if (store.getStat("messagesSent") === 0) {
             store.bump("messagesObservedWhileSilent");
             if (store.getStat("messagesObservedWhileSilent") >= 50000) store.unlock("the_observer");
@@ -240,13 +268,13 @@ function onRelationshipAdd() {
     store.bump("friendsAdded");
     const count = Object.values(RelationshipStore.getRelationships?.() ?? {}).filter((t: any) => t === 1).length;
     store.setStat("friendCount", count);
+    checkUserRelationshipAchievements();
 }
 
 let knownGuildIds: Set<string> | null = null;
 function onGuildCreate({ guild }: any) {
     if (!guild) return;
     if (knownGuildIds === null) {
-        // first snapshot on plugin start - don't retroactively count pre-existing guilds
         knownGuildIds = new Set(GuildStore.getGuildIds?.() ?? []);
         return;
     }
@@ -260,7 +288,6 @@ function onGuildCreate({ guild }: any) {
 
 function onChannelCreate({ channel }: any) {
     if (channel?.isThread?.() || channel?.type === 11 || channel?.type === 12) {
-        // participation counted separately from creation; ownership isn't always known client-side
         store.addUnique("seenThreadIds", channel.id, "uniqueThreadsParticipated");
     }
 }
@@ -268,7 +295,6 @@ function onChannelCreate({ channel }: any) {
 function onUserUpdate({ user }: any) {
     const me = self();
     if (!me || user.id !== me.id) return;
-    // basic avatar-change tracking (best-effort; first observed value is treated as baseline)
     const key = "lastAvatarHash";
     const prev = (store.data.stats as any)[key + "_marker"];
     if (prev !== undefined && user.avatar && prev !== user.avatar) {
@@ -282,6 +308,31 @@ function onPollVoteAdd({ userId }: any) {
     if (me && userId === me.id) store.bump("pollsVoted");
 }
 
+const MODIFIER_KEY_NAMES = ["ctrl", "shift", "alt", "meta"];
+
+function comboMatches(e: KeyboardEvent, combo: string) {
+    const parts = combo.toLowerCase().split("+").map(s => s.trim()).filter(Boolean);
+    const key = parts.find(p => !MODIFIER_KEY_NAMES.includes(p));
+    if (!key) return false;
+    return (
+        e.ctrlKey === parts.includes("ctrl")
+        && e.shiftKey === parts.includes("shift")
+        && e.altKey === parts.includes("alt")
+        && e.metaKey === parts.includes("meta")
+        && e.key.toLowerCase() === key
+    );
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+    if (keybindRecordingState.active) return;
+    const combo = settings.store.keybind || "ctrl+shift+alt+a";
+    if (comboMatches(e, combo)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openModal(props => <AchievementsModal {...props} />);
+    }
+}
+
 export default definePlugin({
     name: "AchievementTracker",
     description: "Tracks in-client achievements (bronze/silver/gold/platinum/mythic/hidden/secret) as you use Discord, with a local save file you choose yourself.",
@@ -289,13 +340,6 @@ export default definePlugin({
     settings,
 
     patches: [
-        // Adds the trophy icon to Discord's top toolbar (the row of icons
-        // next to Inbox/Help in the top-right, visible on the Friends page
-        // and inside every channel/DM). NOTE: this is the single patch most
-        // likely to need a small tweak after a Discord client update, since
-        // it targets Discord's internal toolbar renderer. If the icon ever
-        // stops appearing, the /achievements chat command below always
-        // works as a guaranteed fallback entry point.
         {
             find: "toolbar:function",
             replacement: {
@@ -326,6 +370,7 @@ export default definePlugin({
         MESSAGE_REACTION_ADD: onReactionAdd,
         VOICE_STATE_UPDATES: onVoiceStateUpdate,
         RELATIONSHIP_ADD: onRelationshipAdd,
+        RELATIONSHIP_REMOVE: checkUserRelationshipAchievements,
         GUILD_CREATE: onGuildCreate,
         CHANNEL_CREATE: onChannelCreate,
         USER_UPDATE: onUserUpdate,
@@ -336,16 +381,24 @@ export default definePlugin({
         await store.load();
         store.recordLogin();
         checkAccountAgeAchievements();
-        knownGuildIds = null; // will snapshot on first GUILD_CREATE dispatch after load
+        knownGuildIds = null;
 
-        // periodic checks for things that aren't event-driven (account age, streak upkeep)
+        document.addEventListener("keydown", onGlobalKeydown, true);
+
+        // Run delayed check in case relationship store takes a moment to load after startup
+        setTimeout(() => {
+            checkUserRelationshipAchievements();
+        }, 3000);
+
         (this as any)._interval = setInterval(() => {
             checkAccountAgeAchievements();
-        }, 1000 * 60 * 60); // hourly is plenty; these change on the scale of years
+            checkUserRelationshipAchievements();
+        }, 1000 * 60 * 5); // Check every 5 minutes
     },
 
     stop() {
         if ((this as any)._interval) clearInterval((this as any)._interval);
+        document.removeEventListener("keydown", onGlobalKeydown, true);
         store.saveNow();
     },
 });

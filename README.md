@@ -17,6 +17,27 @@ Discord/Anthropic/third-party server involved).
    `.json` file/path on your computer. Nothing is tracked or persisted until
    you do this (by design — no default hidden write location).
 
+## Customizing the look (new)
+
+In the plugin's settings there's now a **Rarity Appearance** panel: for each
+tier (Bronze → Transcendent) plus a separate row for Secret achievements,
+you can set:
+- **Icon** — type any emoji or short glyph
+- **Text color** — native color picker
+- **Background color** — native color picker
+
+Changes apply live to the achievements window and the tab pills. There's a
+**Reset to Defaults** button if you want to go back to the tinted defaults.
+
+## Opening the window (new)
+
+Three ways in, all equivalent:
+1. The 🏆 toolbar button (see below)
+2. **Settings → Quick Access → "Open Achievements Window"** button
+3. A global keyboard shortcut, default **Ctrl+Shift+Alt+A**, fully
+   rebindable from **Settings → Keyboard Shortcut → "Change Shortcut"**
+   (click it, then press whatever combo you want; Esc cancels)
+
 ## Where's the button?
 
 A 🏆 trophy icon is added to Discord's top toolbar — the same row as the

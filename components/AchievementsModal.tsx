@@ -9,50 +9,58 @@ import { Forms, React, Text } from "@webpack/common";
 
 import { ACHIEVEMENTS, Tier, TIER_META } from "../achievements";
 import { store } from "../dataStore";
+import { settings } from "../settings";
+import { getSecretStyle, getTierStyles } from "../styles";
 
 const TIER_ORDER: Tier[] = ["bronze", "silver", "gold", "platinum", "mythic", "hidden", "ascendant", "transcendent"];
 
-function ProgressBar({ value, goal }: { value: number; goal: number; }) {
+function ProgressBar({ value, goal, color }: { value: number; goal: number; color: string; }) {
     const pct = Math.max(0, Math.min(100, (value / goal) * 100));
     return (
-        <div style={{ width: "100%", height: 6, background: "var(--background-modifier-accent)", borderRadius: 3, marginTop: 4 }}>
-            <div style={{ width: `${pct}%`, height: "100%", background: "var(--brand-experiment)", borderRadius: 3, transition: "width .2s" }} />
+        <div style={{ width: "100%", height: 6, background: "rgba(255,255,255,0.12)", borderRadius: 3, marginTop: 6 }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3, transition: "width .2s" }} />
         </div>
     );
 }
 
-function AchievementRow({ id }: { id: string; }) {
+function AchievementRow({ id, tierStyles, secretStyle }: {
+    id: string;
+    tierStyles: ReturnType<typeof getTierStyles>;
+    secretStyle: ReturnType<typeof getSecretStyle>;
+}) {
     const ach = ACHIEVEMENTS.find(a => a.id === id)!;
     const unlocked = store.isUnlocked(ach.id);
-    const isSecretLocked = ach.secret && !unlocked;
-    const meta = TIER_META[ach.tier];
+    const isSecretLocked = !!ach.secret && !unlocked;
+    const style = ach.secret ? secretStyle : tierStyles[ach.tier];
 
     return (
         <div style={{
             display: "flex", gap: 12, padding: "10px 12px", borderRadius: 8,
-            background: unlocked ? "rgba(87, 242, 135, 0.08)" : "var(--background-secondary)",
-            marginBottom: 8, opacity: unlocked ? 1 : 0.75,
+            background: style.bgColor, marginBottom: 8,
+            opacity: unlocked ? 1 : 0.65,
+            border: unlocked ? "1px solid rgba(255,255,255,0.18)" : "1px solid transparent",
         }}>
-            <div style={{ fontSize: 24, lineHeight: "28px" }}>{meta.emoji}</div>
+            <div style={{ fontSize: 24, lineHeight: "28px" }}>{style.icon}</div>
             <div style={{ flex: 1 }}>
-                <Text variant="text-md/semibold">
+                <div style={{ color: style.textColor, fontWeight: 600, fontSize: 15 }}>
                     {isSecretLocked ? "??? (Secret Achievement)" : ach.name}
-                </Text>
-                <Text variant="text-sm/normal" style={{ opacity: 0.8 }}>
+                    {unlocked && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.8 }}>✓ Unlocked</span>}
+                </div>
+                <div style={{ color: style.textColor, opacity: 0.85, fontSize: 13, marginTop: 2 }}>
                     {isSecretLocked ? "Keep playing to discover this one." : ach.description}
-                </Text>
+                </div>
                 {!isSecretLocked && (
-                    <Text variant="text-sm/normal" style={{ opacity: 0.5, fontStyle: "italic" }}>
+                    <div style={{ color: style.textColor, opacity: 0.55, fontSize: 12, fontStyle: "italic", marginTop: 2 }}>
                         {ach.flavor}
-                    </Text>
+                    </div>
                 )}
                 {!unlocked && !isSecretLocked && ach.stat && ach.goal && (
-                    <ProgressBar value={store.getStat(ach.stat)} goal={ach.goal} />
+                    <ProgressBar value={store.getStat(ach.stat)} goal={ach.goal} color={style.textColor} />
                 )}
                 {unlocked && (
-                    <Text variant="text-sm/normal" style={{ opacity: 0.5 }}>
+                    <div style={{ color: style.textColor, opacity: 0.55, fontSize: 12, marginTop: 4 }}>
                         Unlocked {new Date(store.data.unlocked[ach.id]).toLocaleDateString()}
-                    </Text>
+                    </div>
                 )}
             </div>
         </div>
@@ -60,6 +68,10 @@ function AchievementRow({ id }: { id: string; }) {
 }
 
 export function AchievementsModal(props: ModalProps) {
+    settings.use(["tierStyles", "secretStyle", "unselectedTabTextColor"]);
+    const tierStyles = getTierStyles();
+    const secretStyle = getSecretStyle();
+
     const [tab, setTab] = React.useState<Tier>("bronze");
     const grouped = React.useMemo(() => {
         const map = new Map<Tier, typeof ACHIEVEMENTS>();
@@ -81,24 +93,33 @@ export function AchievementsModal(props: ModalProps) {
             </ModalHeader>
             <ModalContent style={{ paddingTop: 16, paddingBottom: 16 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                    {TIER_ORDER.map(t => (
-                        <div
-                            key={t}
-                            onClick={() => setTab(t)}
-                            style={{
-                                cursor: "pointer", padding: "6px 12px", borderRadius: 20,
-                                background: tab === t ? "var(--brand-experiment)" : "var(--background-secondary-alt)",
-                                fontSize: 13, fontWeight: 600,
-                            }}
-                        >
-                            {TIER_META[t].emoji} {TIER_META[t].label} ({grouped.get(t)?.filter(a => store.isUnlocked(a.id)).length ?? 0}/{grouped.get(t)?.length ?? 0})
-                        </div>
-                    ))}
+                    {TIER_ORDER.map(t => {
+                        const style = tierStyles[t];
+                        const count = grouped.get(t)?.length ?? 0;
+                        const unlockedCount = grouped.get(t)?.filter(a => store.isUnlocked(a.id)).length ?? 0;
+                        return (
+                            <div
+                                key={t}
+                                onClick={() => setTab(t)}
+                                style={{
+                                    cursor: "pointer", padding: "6px 12px", borderRadius: 20,
+                                    background: tab === t ? style.bgColor : "var(--background-secondary-alt)",
+                                    color: tab === t ? style.textColor : (settings.store.unselectedTabTextColor || "#dbdee1"),
+                                    fontSize: 13, fontWeight: 600,
+                                    border: tab === t ? `1px solid ${style.textColor}` : "1px solid transparent",
+                                }}
+                            >
+                                {style.icon} {TIER_META[t].label} ({unlockedCount}/{count})
+                            </div>
+                        );
+                    })}
                 </div>
                 {(grouped.get(tab) ?? []).length === 0 ? (
                     <Forms.FormText>No achievements in this tier yet.</Forms.FormText>
                 ) : (
-                    grouped.get(tab)!.map(a => <AchievementRow key={a.id} id={a.id} />)
+                    grouped.get(tab)!.map(a => (
+                        <AchievementRow key={a.id} id={a.id} tierStyles={tierStyles} secretStyle={secretStyle} />
+                    ))
                 )}
             </ModalContent>
         </ModalRoot>

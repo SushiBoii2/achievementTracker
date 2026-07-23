@@ -5,10 +5,19 @@
  */
 
 import { definePluginSettings } from "@api/Settings";
+import { openModal } from "@utils/modal";
 import { OptionType } from "@utils/types";
 import { Button, Forms, showToast, Toasts } from "@webpack/common";
 
+import { AchievementsModal } from "./components/AchievementsModal";
+import { KeybindRecorder } from "./components/KeybindRecorder";
+import { StyleEditor } from "./components/StyleEditor";
 import { store } from "./dataStore";
+
+// Shared mutable flag so the global keydown listener in index.tsx knows to
+// stay out of the way while the user is actively recording a new shortcut
+// in the settings panel below.
+export const keybindRecordingState = { active: false };
 
 function FilePickerSetting() {
     const path = settings.store.dataFilePath;
@@ -39,6 +48,20 @@ function FilePickerSetting() {
     );
 }
 
+function QuickAccessSetting() {
+    return (
+        <Forms.FormSection>
+            <Forms.FormTitle tag="h3">Quick Access</Forms.FormTitle>
+            <Forms.FormText style={{ marginBottom: 8, opacity: 0.8 }}>
+                Open the achievements window right now, without the toolbar button or shortcut.
+            </Forms.FormText>
+            <Button onClick={() => openModal(props => <AchievementsModal {...props} />)}>
+                Open Achievements Window
+            </Button>
+        </Forms.FormSection>
+    );
+}
+
 export const settings = definePluginSettings({
     dataFilePath: {
         type: OptionType.STRING,
@@ -51,9 +74,48 @@ export const settings = definePluginSettings({
         description: "Show a toast popup whenever you unlock an achievement",
         default: true,
     },
+    keybind: {
+        type: OptionType.STRING,
+        description: "Keyboard shortcut that opens the Achievements window",
+        default: "ctrl+shift+alt+a",
+        hidden: true, // edited only through the KeybindRecorder component below
+    },
+    tierStyles: {
+        type: OptionType.STRING,
+        description: "JSON blob of per-tier icon/color overrides",
+        default: "",
+        hidden: true, // edited only through the StyleEditor component below
+    },
+    secretStyle: {
+        type: OptionType.STRING,
+        description: "JSON blob of the secret-achievement icon/color override",
+        default: "",
+        hidden: true, // edited only through the StyleEditor component below
+    },
+    unselectedTabTextColor: {
+        type: OptionType.STRING,
+        description: "Text color for unselected tabs",
+        default: "#dbdee1", 
+        hidden: true, // edited only through the StyleEditor component
+    },
+    quickAccess: {
+        type: OptionType.COMPONENT,
+        description: "",
+        component: QuickAccessSetting,
+    },
+    keybindRecorder: {
+        type: OptionType.COMPONENT,
+        description: "",
+        component: KeybindRecorder,
+    },
     filePicker: {
         type: OptionType.COMPONENT,
         description: "",
         component: FilePickerSetting,
+    },
+    styleEditor: {
+        type: OptionType.COMPONENT,
+        description: "",
+        component: StyleEditor,
     },
 });
