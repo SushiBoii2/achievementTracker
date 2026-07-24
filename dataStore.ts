@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Achievement, ACHIEVEMENTS, getAchievement } from "./achievements";
+import { ACHIEVEMENTS, Achievement, getAchievement } from "./achievements";
 import { notificationManager } from "./components/NotificationStack";
 import { settings } from "./settings";
 
