@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { showToast, Toasts } from "@webpack/common";
-import { ACHIEVEMENTS, Achievement, getAchievement } from "./achievements";
+import { Achievement, ACHIEVEMENTS, getAchievement } from "./achievements";
+import { notificationManager } from "./components/NotificationStack";
 import { settings } from "./settings";
 
 // The native.ts side handles all real filesystem/dialog access, since
@@ -143,11 +143,14 @@ class Store {
 
     private notify(ach: Achievement) {
         if (!settings.store.showNotifications) return;
-        showToast(
-            `${ach.secret ? "🔒 " : ""}Achievement Unlocked: ${ach.name}`,
-            Toasts.Type.SUCCESS,
-            { duration: 5000 },
-        );
+        
+        notificationManager.push({
+            title: ach.secret ? "🔒 Achievement Unlocked!" : "🏆 Achievement Unlocked!",
+            description: ach.name,
+            icon: ach.secret ? "🔒" : "🏆",
+            type: "achievement",
+            duration: 5000,
+        });
     }
 
     private checkMetaAchievements() {
