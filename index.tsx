@@ -99,7 +99,6 @@ function checkUserRelationshipAchievements() {
     const userB = "946294744089255956";
     const userBigEyebrow = "1063984916183916564";
 
-    // Obtain list of friend IDs across different Discord RelationshipStore implementations
     const friendIds = new Set<string>();
 
     if (typeof RelationshipStore.getFriendIDs === "function") {
@@ -107,21 +106,18 @@ function checkUserRelationshipAchievements() {
     } else if (typeof RelationshipStore.getRelationships === "function") {
         const rels = RelationshipStore.getRelationships() ?? {};
         for (const [id, type] of Object.entries(rels)) {
-            if (type === 1) friendIds.add(id); // 1 = Friend
+            if (type === 1) friendIds.add(id);
         }
     }
 
-    // 1) Meet the Creator
     if (me.id === creatorId || friendIds.has(creatorId)) {
         store.unlock("meet_the_creator");
     }
 
-    // 2) Autism Attack! - True if both users are added as friends
     if (friendIds.has(userA) && friendIds.has(userB)) {
         store.unlock("autism_attack");
     }
 
-    // 3) Oh hell no. Not this guy...
     if (friendIds.has(userBigEyebrow)) {
         store.unlock("oh_hell_no");
     }
@@ -340,19 +336,30 @@ export default definePlugin({
     settings,
 
     patches: [
+        // Header toolbar icon patch
         {
             find: "toolbar:function",
             replacement: {
-                // Capture the start of the array ($1), the existing buttons ($2), and the end of the array ($3)
-                match: /(toolbar:function\(\)\{return\s*\(0,\i\.jsxs?\)\(\i\.Fragment,\{children:\[)(.*?)(\]\}\))/,
-                // Inject our icon at the end of the array, right next to the Inbox and Help buttons
-                replace: "$1$2, $self.renderToolbarIcon()$3"
+                match: /(toolbar:function\(\)\{return)(\(0,\i\.jsxs?\)\(\i\.Fragment,\{children:)(\[)/,
+                replace: "$1$2$3$self.renderToolbarIcon(),"
+            }
+        },
+        // Bottom User Panel patch (inserts button right between avatar/profile section and the mute button)
+        {
+            find: "Account/UserPanel",
+            replacement: {
+                match: /(children:\[)(.*?\i\.avatar.*?,)(.*?mute)/,
+                replace: "$1$2$self.renderUserPanelButton(),$3"
             }
         }
     ],
 
     renderToolbarIcon() {
         return <AchievementToolbarIcon key="achievement-tracker-icon" />;
+    },
+
+    renderUserPanelButton() {
+        return <AchievementToolbarIcon key="achievement-tracker-user-panel-icon" />;
     },
 
     commands: [
@@ -387,7 +394,6 @@ export default definePlugin({
 
         document.addEventListener("keydown", onGlobalKeydown, true);
 
-        // Run delayed check in case relationship store takes a moment to load after startup
         setTimeout(() => {
             checkUserRelationshipAchievements();
         }, 3000);
@@ -395,7 +401,7 @@ export default definePlugin({
         (this as any)._interval = setInterval(() => {
             checkAccountAgeAchievements();
             checkUserRelationshipAchievements();
-        }, 1000 * 60 * 5); // Check every 5 minutes
+        }, 1000 * 60 * 5);
     },
 
     stop() {
