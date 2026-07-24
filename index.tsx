@@ -9,6 +9,8 @@ import definePlugin from "@utils/types";
 import { GuildStore, RelationshipStore, UserStore } from "@webpack/common";
 
 import { AchievementsModal } from "./components/AchievementsModal";
+import { NotificationStackContainer } from "./components/NotificationStack";
+import { AchievementSidebarButton } from "./components/SidebarButton";
 import { AchievementToolbarIcon } from "./components/ToolbarIcon";
 import { store } from "./dataStore";
 import { keybindRecordingState, settings } from "./settings";
@@ -331,12 +333,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
 export default definePlugin({
     name: "AchievementTracker",
-    description: "Tracks in-client achievements with stacked notifications and custom sidebar access.",
+    description: "Tracks in-client achievements (bronze/silver/gold/platinum/mythic/hidden/secret) as you use Discord, with a local save file you choose yourself.",
     authors: [{ name: "You", id: 0n }],
     settings,
 
     patches: [
-        // DM Sidebar Patch: Inserts Achievements right after Quests / Shop
+        // DM Sidebar Patch: Inserts Achievements right under Shop / Quests
         {
             find: "private-channels-item",
             replacement: {
@@ -344,7 +346,6 @@ export default definePlugin({
                 replace: "$1$2,$self.renderSidebarButton()"
             }
         },
-        // Fallback sidebar navigation patch
         {
             find: "PrivateChannels",
             replacement: {
@@ -359,11 +360,23 @@ export default definePlugin({
                 match: /(toolbar:function\(\)\{return)(\(0,\i\.jsxs?\)\(\i\.Fragment,\{children:)(\[)/,
                 replace: "$1$2$3$self.renderToolbarIcon(),"
             }
+        },
+        // Bottom User Panel patch (inserts button right between avatar/profile section and the mute button)
+        {
+            find: "Account/UserPanel",
+            replacement: {
+                match: /(children:\[)(.*?\i\.avatar.*?,)(.*?mute)/,
+                replace: "$1$2$self.renderUserPanelButton(),$3"
+            }
         }
     ],
 
     renderToolbarIcon() {
         return <AchievementToolbarIcon key="achievement-tracker-icon" />;
+    },
+
+    renderUserPanelButton() {
+        return <AchievementToolbarIcon key="achievement-tracker-user-panel-icon" />;
     },
 
     renderSidebarButton() {
@@ -381,22 +394,34 @@ export default definePlugin({
         },
     ],
 
-    // Global Floating Notification Container renderer
-    renderNotificationStack() {
-        return <NotificationStackContainer key="achievement-notification-stack" />;
+    flux: {
+        MESSAGE_CREATE: onMessageCreate,
+        MESSAGE_DELETE: onMessageDelete,
+        MESSAGE_REACTION_ADD: onReactionAdd,
+        VOICE_STATE_UPDATES: onVoiceStateUpdate,
+        RELATIONSHIP_ADD: onRelationshipAdd,
+        RELATIONSHIP_REMOVE: checkUserRelationshipAchievements,
+        GUILD_CREATE: onGuildCreate,
+        CHANNEL_CREATE: onChannelCreate,
+        USER_UPDATE: onUserUpdate,
+        MESSAGE_POLL_VOTE_ADD: onPollVoteAdd,
     },
 
     async start() {
         await store.load();
         store.recordLogin();
         checkAccountAgeAchievements();
+        knownGuildIds = null;
 
         document.addEventListener("keydown", onGlobalKeydown, true);
 
         // Mount notification stack container globally
-        const container = document.createElement("div");
-        container.id = "achievement-tracker-notifications";
-        document.body.appendChild(container);
+        let notificationRoot = document.getElementById("achievement-tracker-notifications");
+        if (!notificationRoot) {
+            notificationRoot = document.createElement("div");
+            notificationRoot.id = "achievement-tracker-notifications";
+            document.body.appendChild(notificationRoot);
+        }
 
         setTimeout(() => {
             checkUserRelationshipAchievements();
