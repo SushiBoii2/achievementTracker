@@ -343,8 +343,10 @@ export default definePlugin({
         {
             find: "toolbar:function",
             replacement: {
-                match: /(toolbar:function\(\)\{return)(\(0,\i\.jsxs?\)\(\i\.Fragment,\{children:)(\[)/,
-                replace: "$1$2$3$self.renderToolbarIcon(),"
+                // Capture the start of the array ($1), the existing buttons ($2), and the end of the array ($3)
+                match: /(toolbar:function\(\)\{return\s*\(0,\i\.jsxs?\)\(\i\.Fragment,\{children:\[)(.*?)(\]\}\))/,
+                // Inject our icon at the end of the array, right next to the Inbox and Help buttons
+                replace: "$1$2, $self.renderToolbarIcon()$3"
             }
         }
     ],
