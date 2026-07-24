@@ -5,7 +5,7 @@
  */
 
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize } from "@utils/modal";
-import { Forms, React, Text } from "@webpack/common";
+import { Forms, React, showToast, Text, Toasts, Tooltip } from "@webpack/common";
 
 import { ACHIEVEMENTS, Tier, TIER_META } from "../achievements";
 import { store } from "../dataStore";
@@ -83,12 +83,59 @@ export function AchievementsModal(props: ModalProps) {
     const total = ACHIEVEMENTS.length;
     const unlockedTotal = ACHIEVEMENTS.filter(a => store.isUnlocked(a.id)).length;
 
+    const giveHint = () => {
+        const uncompletedSecret = ACHIEVEMENTS.filter(
+            a => (a.secret || a.tier === "hidden") && !store.isUnlocked(a.id)
+        );
+
+        if (uncompletedSecret.length === 0) {
+            showToast("You have unlocked all secret achievements!", Toasts.Type.SUCCESS, { duration: 4000 });
+            return;
+        }
+
+        const picked = uncompletedSecret[Math.floor(Math.random() * uncompletedSecret.length)];
+        const hintText = picked.flavor || picked.description || "Look closely at your daily habits...";
+
+        showToast(
+            `💡 Hint: ${hintText}`,
+            Toasts.Type.INFO,
+            { duration: 6000 }
+        );
+    };
+
     return (
         <ModalRoot {...props} size={ModalSize.LARGE}>
             <ModalHeader>
                 <Text variant="heading-lg/semibold" style={{ flex: 1 }}>
                     🏆 Achievements ({unlockedTotal}/{total})
                 </Text>
+                <Tooltip text="Get a hint for a secret achievement">
+                    {tooltipProps => (
+                        <button
+                            {...tooltipProps}
+                            onClick={giveHint}
+                            aria-label="Get Hint"
+                            style={{
+                                background: "transparent",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: 18,
+                                fontWeight: "bold",
+                                marginRight: 12,
+                                color: "var(--interactive-normal)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                padding: "4px 8px",
+                                borderRadius: "50%",
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.color = "var(--interactive-hover)")}
+                            onMouseLeave={e => (e.currentTarget.style.color = "var(--interactive-normal)")}
+                        >
+                            ❓
+                        </button>
+                    )}
+                </Tooltip>
                 <ModalCloseButton onClick={props.onClose} />
             </ModalHeader>
             <ModalContent style={{ paddingTop: 16, paddingBottom: 16 }}>
