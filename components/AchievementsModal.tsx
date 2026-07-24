@@ -5,12 +5,13 @@
  */
 
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize } from "@utils/modal";
-import { Forms, React, showToast, Text, Toasts, Tooltip } from "@webpack/common";
+import { Forms, React, Text, Tooltip } from "@webpack/common";
 
 import { ACHIEVEMENTS, Tier, TIER_META } from "../achievements";
 import { store } from "../dataStore";
 import { settings } from "../settings";
 import { getSecretStyle, getTierStyles } from "../styles";
+import { notificationManager } from "./NotificationStack";
 
 const TIER_ORDER: Tier[] = ["bronze", "silver", "gold", "platinum", "mythic", "hidden", "ascendant", "transcendent"];
 
@@ -89,18 +90,26 @@ export function AchievementsModal(props: ModalProps) {
         );
 
         if (uncompletedSecret.length === 0) {
-            showToast("You have unlocked all secret achievements!", Toasts.Type.SUCCESS, { duration: 4000 });
+            notificationManager.push({
+                title: "All Secrets Unlocked!",
+                description: "You have unlocked all secret achievements!",
+                icon: "🎉",
+                type: "info",
+                duration: 4000
+            });
             return;
         }
 
         const picked = uncompletedSecret[Math.floor(Math.random() * uncompletedSecret.length)];
         const hintText = picked.flavor || picked.description || "Look closely at your daily habits...";
 
-        showToast(
-            `💡 Hint: ${hintText}`,
-            Toasts.Type.INFO,
-            { duration: 6000 }
-        );
+        notificationManager.push({
+            title: `Hint: ${picked.name}`,
+            description: hintText,
+            icon: "💡",
+            type: "hint",
+            duration: 6000
+        });
     };
 
     return (
