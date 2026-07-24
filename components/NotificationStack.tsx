@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { React } from "@webpack/common";
+import { React, ReactDOM } from "@webpack/common";
 
 export interface StackNotification {
     id: string;
@@ -45,12 +45,7 @@ class NotificationManager {
 
 export const notificationManager = new NotificationManager();
 
-interface CardProps {
-    item: StackNotification;
-    onExited: (id: string) => void;
-}
-
-function NotificationCard({ item, onExited }: CardProps) {
+function NotificationCard({ item, onExited }: { item: StackNotification; onExited: (id: string) => void }) {
     const [exiting, setExiting] = React.useState(false);
 
     React.useEffect(() => {
@@ -61,7 +56,7 @@ function NotificationCard({ item, onExited }: CardProps) {
         return () => clearTimeout(timer);
     }, [item.duration]);
 
-    const handleAnimationEnd = (e: React.TransitionEvent) => {
+    const handleTransitionEnd = (e: React.TransitionEvent) => {
         if (exiting && e.propertyName === "transform") {
             onExited(item.id);
         }
@@ -76,7 +71,7 @@ function NotificationCard({ item, onExited }: CardProps) {
 
     return (
         <div
-            onTransitionEnd={handleAnimationEnd}
+            onTransitionEnd={handleTransitionEnd}
             style={{
                 width: 320,
                 padding: "12px 16px",
@@ -91,10 +86,8 @@ function NotificationCard({ item, onExited }: CardProps) {
                 backdropFilter: "blur(8px)",
                 opacity: exiting ? 0 : 1,
                 transform: exiting ? "translateX(120%) scale(0.9)" : "translateX(0) scale(1)",
-                maxHeight: exiting ? 0 : 100,
+                maxHeight: exiting ? 0 : 120,
                 marginBottom: exiting ? 0 : 10,
-                paddingTop: exiting ? 0 : 12,
-                paddingBottom: exiting ? 0 : 12,
                 overflow: "hidden",
                 transition: "transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, max-height 0.35s ease, margin 0.35s ease, padding 0.35s ease",
             }}
@@ -149,4 +142,23 @@ export function NotificationStackContainer() {
             </div>
         </div>
     );
+}
+
+let mountContainer: HTMLElement | null = null;
+
+export function mountNotificationStack() {
+    if (!mountContainer) {
+        mountContainer = document.createElement("div");
+        mountContainer.id = "achievement-tracker-notifications";
+        document.body.appendChild(mountContainer);
+    }
+    ReactDOM.render(<NotificationStackContainer />, mountContainer);
+}
+
+export function unmountNotificationStack() {
+    if (mountContainer) {
+        ReactDOM.unmountComponentAtNode(mountContainer);
+        mountContainer.remove();
+        mountContainer = null;
+    }
 }
