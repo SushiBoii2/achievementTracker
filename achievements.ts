@@ -146,7 +146,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "profile_decorator", tier: "platinum", category: "Social", name: "Profile Decorator", description: "Equip a profile avatar decoration.", flavor: "Looking snazzy.", manual: true },
     { id: "nicknamer", tier: "bronze", category: "Social", name: "Nicknamer", description: "Change your server nickname in 10 different servers.", flavor: "Identity crisis.", stat: "uniqueNicknameGuilds", goal: 10 },
     { id: "nickname_collector", tier: "silver", category: "Social", name: "Nickname Collector", description: "Change your nickname 100 times across any servers.", flavor: "Who are you today?", stat: "nicknameChanges", goal: 100 },
-    { id: "nandos", tier: "hidden", secret: true, category: "Social", name: "Nandos", description: "add the user 1289877867362254949", flavor: "Forced to add btw", manual: true },
+    { id: "nandos", tier: "hidden", secret: true, category: "Social", name: "Nandos", description: "Add the one and only Nondas", flavor: "Forced to add btw", manual: true },
     { id: "meet_the_creator", tier: "ascendant", category: "Social", name: "Meet the creator", description: "Who is this?", flavor: "You found the source.", manual: true },
     { id: "autism_attack", tier: "hidden", secret: true, category: "Social", name: "Autism Attack!", description: "Have Kevin and Ekjot both added. The negative energies create a positive...", flavor: "Double trouble.", manual: true },
     { id: "oh_hell_no", tier: "bronze", secret: true, category: "Social", name: "Oh hell no. Not this guy...", description: "Have the late, big-eyebrowed, meanie added (niche reference)", flavor: "Choices were made.", manual: true },
