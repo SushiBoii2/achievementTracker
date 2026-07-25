@@ -145,6 +145,7 @@ export function NotificationStackContainer() {
 }
 
 let mountContainer: HTMLElement | null = null;
+let root: { render(node: any): void; unmount(): void; } | null = null;
 
 export function mountNotificationStack() {
     if (!mountContainer) {
@@ -152,12 +153,35 @@ export function mountNotificationStack() {
         mountContainer.id = "achievement-tracker-notifications";
         document.body.appendChild(mountContainer);
     }
-    ReactDOM.render(<NotificationStackContainer />, mountContainer);
+
+    try {
+        // Discord ships React 18; prefer the modern root API when it's exposed.
+        if (typeof (ReactDOM as any).createRoot === "function") {
+            root = (ReactDOM as any).createRoot(mountContainer);
+            root.render(<NotificationStackContainer />);
+            return;
+        }
+    } catch (e) {
+        console.error("[AchievementTracker] createRoot failed, falling back to legacy render", e);
+        root = null;
+    }
+
+    try {
+        // Fallback for older/legacy ReactDOM exports.
+        (ReactDOM as any).render(<NotificationStackContainer />, mountContainer);
+    } catch (e) {
+        console.error("[AchievementTracker] Failed to mount notification stack - achievement popups will not show", e);
+    }
 }
 
 export function unmountNotificationStack() {
+    if (root) {
+        try { root.unmount(); } catch { /* ignore */ }
+        root = null;
+    } else if (mountContainer) {
+        try { (ReactDOM as any).unmountComponentAtNode(mountContainer); } catch { /* ignore */ }
+    }
     if (mountContainer) {
-        ReactDOM.unmountComponentAtNode(mountContainer);
         mountContainer.remove();
         mountContainer = null;
     }

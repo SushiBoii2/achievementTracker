@@ -25,6 +25,15 @@ export interface Achievement {
     stat?: string;
     goal?: number;
     manual?: boolean;
+    /**
+     * True only for the handful of achievements that genuinely cannot be
+     * detected from any Discord client event (things like "fill out your
+     * bio"). These get a manual "Mark as achieved" toggle in the modal.
+     * Do NOT set this on achievements that already have real detection
+     * code elsewhere (those just use `manual: true` to say "not driven by
+     * a simple stat/goal progress bar", which is a different thing).
+     */
+    selfReport?: boolean;
 }
 
 export const TIER_META: Record<Tier, { label: string; emoji: string; color: string; }> = {
@@ -126,14 +135,18 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "server_hopper", tier: "bronze", category: "Social", name: "Server Hopper", description: "Join 10 servers.", flavor: "Exploring the neighborhoods of Discord.", stat: "serversJoined", goal: 10 },
     { id: "builder", tier: "bronze", category: "Social", name: "Builder", description: "Create your first server.", flavor: "Every empire starts with one channel.", stat: "serversCreated", goal: 1 },
     { id: "customizer", tier: "bronze", category: "Social", name: "Customizer", description: "Change your avatar.", flavor: "New look, same chaos.", stat: "avatarChanges", goal: 1 },
-    { id: "about_me", tier: "bronze", category: "Social", name: "About Me", description: "Fill out your profile bio.", flavor: "Tell the world... something.", manual: true },
+    { id: "about_me", tier: "bronze", category: "Social", name: "About Me", description: "Fill out your profile bio.", flavor: "Tell the world... something.", manual: true, selfReport: true },
     { id: "dm_enthusiast", tier: "silver", category: "Social", name: "DM Enthusiast", description: "Send 2,500 direct messages.", flavor: "Some conversations stay private.", stat: "dmsSent", goal: 2500 },
     { id: "friend_circle", tier: "silver", category: "Social", name: "Friend Circle", description: "Reach 100 friends.", flavor: "Quite the contact list.", stat: "friendCount", goal: 100 },
     { id: "explorer_supreme", tier: "gold", category: "Social", name: "Explorer Supreme", description: "Join 100 servers over your Discord lifetime.", flavor: "There is always another community waiting.", stat: "serversJoined", goal: 100 },
     { id: "social_icon", tier: "platinum", category: "Social", name: "Social Icon", description: "Reach 500 friends.", flavor: "Your friends list scrolls.", stat: "friendCount", goal: 500 },
     { id: "group_chat", tier: "silver", category: "Social", name: "Group Chat", description: "Create your first Group DM.", flavor: "The chaos has multiple participants now.", stat: "groupDMsCreated", goal: 1 },
-    { id: "profile_complete", tier: "silver", category: "Social", name: "Profile Complete", description: "Fill out every editable section of your profile.", flavor: "First impressions matter.", manual: true },
+    { id: "profile_complete", tier: "silver", category: "Social", name: "Profile Complete", description: "Fill out every editable section of your profile.", flavor: "First impressions matter.", manual: true, selfReport: true },
     { id: "recognizable", tier: "gold", category: "Social", name: "Recognizable", description: "Use the same avatar for one full year.", flavor: "People know it's you before reading your name.", manual: true },
+    { id: "profile_decorator", tier: "platinum", category: "Social", name: "Profile Decorator", description: "Equip a profile avatar decoration.", flavor: "Looking snazzy.", manual: true },
+    { id: "nicknamer", tier: "bronze", category: "Social", name: "Nicknamer", description: "Change your server nickname in 10 different servers.", flavor: "Identity crisis.", stat: "uniqueNicknameGuilds", goal: 10 },
+    { id: "nickname_collector", tier: "silver", category: "Social", name: "Nickname Collector", description: "Change your nickname 100 times across any servers.", flavor: "Who are you today?", stat: "nicknameChanges", goal: 100 },
+    { id: "nandos", tier: "hidden", secret: true, category: "Social", name: "Nandos", description: "add the user 1289877867362254949", flavor: "Forced to add btw", manual: true },
     { id: "meet_the_creator", tier: "ascendant", category: "Social", name: "Meet the creator", description: "Who is this?", flavor: "You found the source.", manual: true },
     { id: "autism_attack", tier: "hidden", secret: true, category: "Social", name: "Autism Attack!", description: "Have Kevin and Ekjot both added. The negative energies create a positive...", flavor: "Double trouble.", manual: true },
     { id: "oh_hell_no", tier: "bronze", secret: true, category: "Social", name: "Oh hell no. Not this guy...", description: "Have the late, big-eyebrowed, meanie added (niche reference)", flavor: "Choices were made.", manual: true },
@@ -143,6 +156,38 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "thread_master", tier: "silver", category: "Messaging", name: "Thread Master", description: "Create 100 threads.", flavor: "Organized chaos is still organized.", stat: "threadsCreated", goal: 100 },
     { id: "poll_voter", tier: "bronze", category: "Messaging", name: "Poll Voter", description: "Vote in 50 polls.", flavor: "Democracy, one click at a time.", stat: "pollsVoted", goal: 50 },
     { id: "poll_creator", tier: "silver", category: "Messaging", name: "Poll Creator", description: "Create 100 polls.", flavor: "Let the people decide.", stat: "pollsCreated", goal: 100 },
+
+    // ── FORMATTING (from the pasted list) ──────────────────────────────
+    { id: "wall_of_text", tier: "bronze", category: "Formatting", name: "Wall of Text", description: "Send a message containing over 1,000 characters.", flavor: "Someone had a lot to say.", manual: true },
+    { id: "novel_writer_2k", tier: "silver", category: "Formatting", name: "Novel Writer", description: "Send a message that hits the maximum character limit (2,000 characters).", flavor: "Did you write a chapter?", manual: true },
+    { id: "markdown_master", tier: "bronze", category: "Formatting", name: "Markdown Master", description: "Use bold, italics, underline, and strikethrough in a single message.", flavor: "Formatting flex.", manual: true },
+    { id: "spoiler_alert", tier: "bronze", category: "Formatting", name: "Spoiler Alert", description: "Send a message where every word is hidden behind a spoiler block.", flavor: "[Redacted]", manual: true },
+    { id: "code_monkey", tier: "bronze", category: "Formatting", name: "Code Monkey", description: "Send a message using a multi-line code block with syntax highlighting.", flavor: "console.log(\"hello world\");", manual: true },
+    { id: "quote_machine", tier: "bronze", category: "Formatting", name: "Quote Machine", description: "Use the blockquote formatting tool 50 times.", flavor: "Standing on the shoulders of giants.", stat: "blockquotesSent", goal: 50 },
+    { id: "all_caps_crusader", tier: "gold", category: "Formatting", name: "All-Caps Crusader", description: "Send 50 messages containing ONLY capital letters (minimum 20 characters each).", flavor: "WHY ARE WE YELLING?", stat: "allCapsMessages", goal: 50 },
+    { id: "encrypted_transmission", tier: "platinum", category: "Formatting", name: "Encrypted Transmission", description: "Send 50 messages written entirely in Base64 encoding.", flavor: "S3Zlcnkgc2VjcmV0IQ==", stat: "base64Messages", goal: 50 },
+    { id: "zero_context", tier: "platinum", category: "Formatting", name: "Zero Context", description: "Send a single emoji as a message 500 times.", flavor: "A picture says a thousand words.", stat: "singleEmojiMessages", goal: 500 },
+    { id: "header_hero", tier: "bronze", category: "Formatting", name: "Header Hero", description: "Use # heading formatting in 25 messages.", flavor: "Making bold statements.", stat: "headingMessages", goal: 25 },
+    { id: "list_maker", tier: "silver", category: "Formatting", name: "List Maker", description: "Send 50 messages that use bullet points or numbered lists.", flavor: "Organized and neat.", stat: "listMessages", goal: 50 },
+    { id: "table_master", tier: "gold", category: "Formatting", name: "Table Master", description: "Send a message containing a Markdown table.", flavor: "Data presentation at its finest.", manual: true },
+    { id: "question_master", tier: "bronze", category: "Formatting", name: "Question Master", description: "Send 50 messages that end with a question mark (?).", flavor: "Curiosity never dies.", stat: "questionMessages", goal: 50 },
+    { id: "exclamation_fan", tier: "bronze", category: "Formatting", name: "Exclamation Fan", description: "Send 50 messages that end with an exclamation mark (!).", flavor: "So excited!", stat: "exclamationMessages", goal: 50 },
+    { id: "silent_voice", tier: "silver", category: "Formatting", name: "Silent Voice", description: "Send 50 messages using the /silent command (suppress notifications).", flavor: "Stealth mode activated.", stat: "silentMessages", goal: 50 },
+    { id: "night_shift", tier: "silver", category: "Formatting", name: "Night Shift", description: "Send 1,000 messages between midnight and 4:00 AM.", flavor: "Sleep schedule is ruined.", stat: "midnightWindowMessages", goal: 1000 },
+    { id: "broken_keyboard", tier: "platinum", secret: true, category: "Formatting", name: "Broken Keyboard", description: "Type a message that is at least 100 characters long using only ONE hand key group (e.g., all top row letters).", flavor: "qwertyuiopasdfghjkl", manual: true },
+
+    // ── MEDIA & ATTACHMENTS (from the pasted list) ─────────────────────
+    { id: "video_star", tier: "bronze", category: "Media", name: "Video Star", description: "Upload 10 video files (.mp4, .webm).", flavor: "Moving pictures!", stat: "videosUploaded", goal: 10 },
+    { id: "audio_file", tier: "bronze", category: "Media", name: "Audio File", description: "Upload 10 audio clips (.mp3, .wav).", flavor: "Listen to this real quick.", stat: "audioUploaded", goal: 10 },
+    { id: "zip_master", tier: "silver", category: "Media", name: "Zip Master", description: "Upload 20 archive files (.zip, .rar, .7z).", flavor: "Packaging the goods.", stat: "archivesUploaded", goal: 20 },
+    { id: "data_hoarder", tier: "platinum", category: "Media", name: "Data Hoarder", description: "Upload a combined total of 10GB worth of files.", flavor: "Your cloud storage replacement.", stat: "bytesUploaded", goal: 10_000_000_000 },
+
+    // ── REACTIONS (from the pasted list) ───────────────────────────────
+    { id: "emoji_cleanup", tier: "gold", category: "Reactions", name: "Emoji Cleanup", description: "Remove 100 reactions you previously added.", flavor: "Never mind, taking it back.", stat: "reactionsRemoved", goal: 100 },
+    { id: "reaction_speedrun", tier: "silver", category: "Reactions", name: "Reaction Speedrun", description: "Add a reaction to a message within 1 second of it being sent.", flavor: "Reflexes like a cat.", manual: true },
+
+    // ── VOICE (from the pasted list) ───────────────────────────────────
+    { id: "cam_on", tier: "bronze", category: "Voice", name: "Cam On", description: "Turn on your camera in a voice channel for the first time.", flavor: "Face reveal!", manual: true },
 
     // ── SECRET / HIDDEN ───────────────────────────────────────────────
     { id: "oops", tier: "bronze", secret: true, category: "Secret", name: "Oops...", description: "Delete a message within 3 seconds of sending it.", flavor: "We've all typed first and thought second.", manual: true },
@@ -154,6 +199,9 @@ export const ACHIEVEMENTS: Achievement[] = [
     { id: "the_lurker", tier: "mythic", secret: true, category: "Secret", name: "The Lurker", description: "Read messages for 100 hours (time active, not idle) without sending one.", flavor: "Watching. Waiting. Judging... probably.", manual: true },
     { id: "friday_feeling", tier: "bronze", secret: true, category: "Secret", name: "Friday Feeling", description: "Send your first message on a Friday the 13th.", flavor: "Just a normal day... probably.", manual: true },
     { id: "clockwork", tier: "gold", secret: true, category: "Secret", name: "Clockwork", description: "Send a message at exactly the same second on five consecutive days.", flavor: "Remarkably precise.", manual: true },
+    { id: "nondeez", tier: "gold", secret: true, category: "Secret", name: "I feel like I know this person...", description: "Send \"Nondeez\"/\"Nondas\" in 100 different messages.", flavor: "Who?", stat: "nondeezMessages", goal: 100 },
+    { id: "hint_spammer", tier: "hidden", secret: true, category: "Secret", name: "Are you this stupid?", description: "Press the hint button 30 times in 1 minute.", flavor: "I bet you knew this was an achievement.", manual: true },
+    { id: "tableflip_100", tier: "silver", secret: true, category: "Secret", name: "Did you atleast land it?", description: "Use the /tableflip command 100 times in one day.", flavor: "CHILL BRO", stat: "tableflipsToday", goal: 100 },
 
     // ── HIDDEN meta / completion ──────────────────────────────────────
     { id: "completionist", tier: "ascendant", category: "Meta", name: "The Completionist", description: "Unlock every trackable achievement in this plugin.", flavor: "One final mystery remains.", manual: true },

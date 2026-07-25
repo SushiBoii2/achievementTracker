@@ -15,6 +15,18 @@ import { notificationManager } from "./NotificationStack";
 
 const TIER_ORDER: Tier[] = ["bronze", "silver", "gold", "platinum", "mythic", "hidden", "ascendant", "transcendent"];
 
+// Rolling window of recent hint-button clicks, in-memory only, for
+// "Are you this stupid?" (30 clicks within 1 minute).
+const hintClickTimestamps: number[] = [];
+function recordHintClick() {
+    const now = Date.now();
+    hintClickTimestamps.push(now);
+    while (hintClickTimestamps.length && now - hintClickTimestamps[0] > 60_000) {
+        hintClickTimestamps.shift();
+    }
+    if (hintClickTimestamps.length >= 30) store.unlock("hint_spammer");
+}
+
 function ProgressBar({ value, goal, color }: { value: number; goal: number; color: string; }) {
     const pct = Math.max(0, Math.min(100, (value / goal) * 100));
     return (
@@ -43,9 +55,32 @@ function AchievementRow({ id, tierStyles, secretStyle }: {
         }}>
             <div style={{ fontSize: 24, lineHeight: "28px" }}>{style.icon}</div>
             <div style={{ flex: 1 }}>
-                <div style={{ color: style.textColor, fontWeight: 600, fontSize: 15 }}>
-                    {isSecretLocked ? "??? (Secret Achievement)" : ach.name}
-                    {unlocked && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.8 }}>✓ Unlocked</span>}
+                <div style={{ color: style.textColor, fontWeight: 600, fontSize: 15, display: "flex", alignItems: "center" }}>
+                    <span>
+                        {isSecretLocked ? "??? (Secret Achievement)" : ach.name}
+                        {unlocked && <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.8 }}>✓ Unlocked</span>}
+                    </span>
+                    {ach.selfReport && (
+                        <button
+                            onClick={() => {
+                                if (unlocked) store.unmarkSelfReport(ach.id);
+                                else store.unlock(ach.id);
+                            }}
+                            style={{
+                                marginLeft: "auto",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                padding: "3px 8px",
+                                borderRadius: 6,
+                                border: `1px solid ${style.textColor}`,
+                                background: unlocked ? "transparent" : style.textColor,
+                                color: unlocked ? style.textColor : "#111",
+                                cursor: "pointer",
+                            }}
+                        >
+                            {unlocked ? "Unmark" : "Mark as achieved"}
+                        </button>
+                    )}
                 </div>
                 <div style={{ color: style.textColor, opacity: 0.85, fontSize: 13, marginTop: 2 }}>
                     {isSecretLocked ? "Keep playing to discover this one." : ach.description}
@@ -53,6 +88,11 @@ function AchievementRow({ id, tierStyles, secretStyle }: {
                 {!isSecretLocked && (
                     <div style={{ color: style.textColor, opacity: 0.55, fontSize: 12, fontStyle: "italic", marginTop: 2 }}>
                         {ach.flavor}
+                    </div>
+                )}
+                {ach.selfReport && !unlocked && (
+                    <div style={{ color: style.textColor, opacity: 0.6, fontSize: 11, marginTop: 4 }}>
+                        This one can't be detected automatically - click above once you've actually done it.
                     </div>
                 )}
                 {!unlocked && !isSecretLocked && ach.stat && ach.goal && (
@@ -85,6 +125,7 @@ export function AchievementsModal(props: ModalProps) {
     const unlockedTotal = ACHIEVEMENTS.filter(a => store.isUnlocked(a.id)).length;
 
     const giveHint = () => {
+        recordHintClick();
         const uncompletedSecret = ACHIEVEMENTS.filter(
             a => (a.secret || a.tier === "hidden") && !store.isUnlocked(a.id)
         );

@@ -4,17 +4,30 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { createStore, get, set } from "@api/DataStore";
+
 import { ACHIEVEMENTS, Achievement, getAchievement } from "./achievements";
 import { notificationManager } from "./components/NotificationStack";
 import { settings } from "./settings";
 
-// The native.ts side handles all real filesystem/dialog access, since
-// index.tsx runs in Discord's renderer (browser-like) context and cannot
-// touch the disk directly.
+// Primary persistence: Vencord's built-in DataStore (IndexedDB), scoped to
+// this plugin. This is fully local (nothing leaves your machine) and
+// requires zero setup - unlike the old "pick a JSON file" flow, which meant
+// progress silently wasn't saved for anyone who never opened Settings and
+// clicked the button. That was the main reason achievements "didn't work"
+// for a lot of people: tracking happened in memory but was thrown away on
+// every restart.
+const AchievementStore = createStore("AchievementTrackerData", "AchievementTrackerStore");
+const SAVE_KEY = "save-data";
+
+// The native.ts side is now only used for optional manual export/import
+// backups, since index.tsx runs in Discord's renderer (browser-like)
+// context and can't touch the disk directly on its own.
 const Native = VencordNative.pluginHelpers.AchievementTracker as {
     readFile(path: string): Promise<string | null>;
     writeFile(path: string, data: string): Promise<boolean>;
     pickSaveFile(defaultPath?: string): Promise<string | null>;
+    pickOpenFile(): Promise<string | null>;
 };
 
 export interface Stats {
@@ -22,7 +35,7 @@ export interface Stats {
 }
 
 export interface SaveData {
-    version: 1;
+    version: 2;
     stats: Stats;
     /** emoji names/ids ever used by the user, so "unique emoji" achievements can be counted */
     seenEmojis: string[];
@@ -30,24 +43,39 @@ export interface SaveData {
     seenThreadIds: string[];
     seenVoiceChannelIds: string[];
     seenVoiceGuildIds: string[];
+    /** guild ids in which the user's nickname has been seen to change, for "Nicknamer" */
+    seenNicknameGuildIds: string[];
     unlocked: Record<string, number>; // achievementId -> unix ms unlock time
     loginDates: string[]; // ISO yyyy-mm-dd, used for streak calculation
     lastMessageDay?: string;
     messagesToday: number;
+    /** last known avatar hash + when it last changed, for "Recognizable" */
+    lastAvatarHash?: string;
+    lastAvatarChangeTs?: number;
+    /** yyyy-mm-dd markers for the various "N times in a day" counters below */
+    dayMarkers: Record<string, string>;
+    /** whether the pre-DataStore JSON file (if any) has already been merged in */
+    migratedLegacyFile?: boolean;
 }
 
 function emptyData(): SaveData {
     return {
-        version: 1,
+        version: 2,
         stats: {},
         seenEmojis: [],
         seenThreadIds: [],
         seenVoiceChannelIds: [],
         seenVoiceGuildIds: [],
+        seenNicknameGuildIds: [],
         unlocked: {},
         loginDates: [],
         messagesToday: 0,
+        dayMarkers: {},
     };
+}
+
+function todayKey() {
+    return new Date().toISOString().slice(0, 10);
 }
 
 class Store {
@@ -56,21 +84,51 @@ class Store {
     private loaded = false;
 
     async load() {
-        const path = settings.store.dataFilePath;
-        if (!path) {
-            this.data = emptyData();
-            this.loaded = true;
-            return;
-        }
         try {
-            const raw = await Native.readFile(path);
-            if (raw) {
-                this.data = { ...emptyData(), ...JSON.parse(raw) };
-            }
+            const raw = await get(SAVE_KEY, AchievementStore);
+            if (raw) this.data = { ...emptyData(), ...raw, dayMarkers: { ...(raw as any).dayMarkers } };
         } catch (e) {
-            console.error("[AchievementTracker] Failed to load save file", e);
+            console.error("[AchievementTracker] Failed to load save data", e);
         }
+
+        await this.migrateLegacyFileIfNeeded();
         this.loaded = true;
+    }
+
+    /**
+     * One-time best-effort import from the old "manual JSON file" storage
+     * format, for anyone upgrading from a previous version of this plugin
+     * that already had a file configured. Safe to skip/fail silently.
+     */
+    private async migrateLegacyFileIfNeeded() {
+        if (this.data.migratedLegacyFile) return;
+        const path = settings.store.dataFilePath;
+        if (path) {
+            try {
+                const raw = await Native.readFile(path);
+                if (raw) {
+                    const legacy = JSON.parse(raw);
+                    // Merge rather than overwrite: keep whichever unlock timestamp
+                    // is older for anything unlocked in both, and take the max of
+                    // any numeric stats so nothing regresses.
+                    for (const [id, ts] of Object.entries(legacy.unlocked ?? {})) {
+                        if (!this.data.unlocked[id] || (ts as number) < this.data.unlocked[id]) {
+                            this.data.unlocked[id] = ts as number;
+                        }
+                    }
+                    for (const [key, val] of Object.entries(legacy.stats ?? {})) {
+                        this.data.stats[key] = Math.max(this.data.stats[key] ?? 0, val as number);
+                    }
+                    for (const key of ["seenEmojis", "seenThreadIds", "seenVoiceChannelIds", "seenVoiceGuildIds"] as const) {
+                        const merged = new Set([...(this.data[key] ?? []), ...(legacy[key] ?? [])]);
+                        (this.data[key] as string[]) = [...merged];
+                    }
+                }
+            } catch (e) {
+                console.error("[AchievementTracker] Legacy file migration skipped", e);
+            }
+        }
+        this.data.migratedLegacyFile = true;
     }
 
     private scheduleSave() {
@@ -79,13 +137,23 @@ class Store {
     }
 
     async saveNow() {
-        const path = settings.store.dataFilePath;
-        if (!path) return;
         try {
-            await Native.writeFile(path, JSON.stringify(this.data, null, 2));
+            await set(SAVE_KEY, this.data, AchievementStore);
         } catch (e) {
-            console.error("[AchievementTracker] Failed to write save file", e);
+            console.error("[AchievementTracker] Failed to write save data", e);
         }
+    }
+
+    /** Export the raw save data as a JSON string, for the manual backup button. */
+    exportJson() {
+        return JSON.stringify(this.data, null, 2);
+    }
+
+    /** Import a previously-exported JSON string, merging into current progress. */
+    async importJson(raw: string) {
+        const parsed = JSON.parse(raw);
+        this.data = { ...emptyData(), ...this.data, ...parsed, migratedLegacyFile: true };
+        await this.saveNow();
     }
 
     getStat(key: string) {
@@ -107,8 +175,27 @@ class Store {
         this.scheduleSave();
     }
 
+    /**
+     * Increment a counter that resets back to 0 the first time it's touched
+     * on a new calendar day (local time). Used for "N times in a single
+     * day" achievements like the /tableflip or message-deletion ones.
+     */
+    bumpDaily(statKey: string, markerKey: string, amount = 1) {
+        if (!this.loaded) return;
+        const today = todayKey();
+        if (this.data.dayMarkers[markerKey] !== today) {
+            this.data.dayMarkers[markerKey] = today;
+            this.data.stats[statKey] = 0;
+        }
+        this.bump(statKey, amount);
+    }
+
     /** For "unique X" achievements backed by a Set persisted as an array */
-    addUnique(listKey: "seenEmojis" | "seenThreadIds" | "seenVoiceChannelIds" | "seenVoiceGuildIds", value: string, statKey: string) {
+    addUnique(
+        listKey: "seenEmojis" | "seenThreadIds" | "seenVoiceChannelIds" | "seenVoiceGuildIds" | "seenNicknameGuildIds",
+        value: string,
+        statKey: string
+    ) {
         if (!this.loaded) return;
         const list = this.data[listKey] as string[];
         if (!list.includes(value)) {
@@ -141,9 +228,19 @@ class Store {
         this.checkMetaAchievements();
     }
 
+    /** Undo a manual self-report unlock (in case of a misclick). No-op for anything else. */
+    unmarkSelfReport(id: string) {
+        const ach = getAchievement(id);
+        if (!ach?.selfReport) return;
+        if (this.isUnlocked(id)) {
+            delete this.data.unlocked[id];
+            this.scheduleSave();
+        }
+    }
+
     private notify(ach: Achievement) {
         if (!settings.store.showNotifications) return;
-        
+
         notificationManager.push({
             title: ach.secret ? "🔒 Achievement Unlocked!" : "🏆 Achievement Unlocked!",
             description: ach.name,
@@ -170,7 +267,7 @@ class Store {
 
     // ── Login streak handling ──────────────────────────────────────────
     recordLogin() {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayKey();
         if (this.data.loginDates[this.data.loginDates.length - 1] === today) return;
 
         const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -188,7 +285,7 @@ class Store {
 
     // ── Daily message counter (for "Nice." = exactly 69/day) ───────────
     recordMessageForDay() {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayKey();
         if (this.data.lastMessageDay !== today) {
             this.data.lastMessageDay = today;
             this.data.messagesToday = 0;

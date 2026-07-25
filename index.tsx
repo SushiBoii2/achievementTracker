@@ -4,18 +4,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import { openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
-import { GuildStore, RelationshipStore, UserStore } from "@webpack/common";
+import { ChannelStore, GuildStore, React, RelationshipStore, UserStore } from "@webpack/common";
 
 import { AchievementsModal } from "./components/AchievementsModal";
 import { mountNotificationStack, unmountNotificationStack } from "./components/NotificationStack";
-import { AchievementSidebarButton } from "./components/SidebarButton";
 import { AchievementToolbarIcon } from "./components/ToolbarIcon";
 import { store } from "./dataStore";
 import { keybindRecordingState, settings } from "./settings";
 
 const DISCORD_EPOCH = 1420070400000;
+const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
 
 function snowflakeToDate(id: string) {
     const ms = Number(BigInt(id) >> 22n) + DISCORD_EPOCH;
@@ -23,7 +24,7 @@ function snowflakeToDate(id: string) {
 }
 
 function yearsSince(date: Date) {
-    return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    return (Date.now() - date.getTime()) / YEAR_MS;
 }
 
 interface RecentMsg {
@@ -39,11 +40,44 @@ const contentHistory = new Map<string, number[]>();
 const clockworkSeconds: number[] = [];
 let lastClockworkDay = "";
 
+// Rolling window of the user's own message send-times, used for "Rapid Fire".
+const ownMessageTimestamps: number[] = [];
+// Approximate send-time cache for ANY message we've observed (own or not),
+// used for "Reaction Speedrun". Capped in size, not persisted.
+const anyMessageTimestamps = new Map<string, number>();
+
+// When the last "delete within 3s" (Oops...) happened, so we can chain it
+// into "Wrong Window" if the very next message is "wrong chat".
+let lastOopsAt = 0;
+
 let voiceStartTimes = new Map<string, number>();
 let streamStartTime: number | null = null;
 
 function self() {
     return UserStore.getCurrentUser();
+}
+
+function pruneMapBySize<K>(map: Map<K, any>, max: number) {
+    while (map.size > max) {
+        const oldestKey = map.keys().next().value;
+        if (oldestKey === undefined) break;
+        map.delete(oldestKey);
+    }
+}
+
+// Tracks message nonces/ids we've already counted, so an optimistic
+// MESSAGE_CREATE (sent immediately on click) and the server-confirmed one
+// that follows it don't both get counted as separate messages.
+const processedMessageKeys = new Set<string>();
+function alreadyProcessed(message: any) {
+    const key = String(message.nonce ?? message.id);
+    if (processedMessageKeys.has(key)) return true;
+    processedMessageKeys.add(key);
+    if (processedMessageKeys.size > 1000) {
+        const oldest = processedMessageKeys.values().next().value;
+        if (oldest !== undefined) processedMessageKeys.delete(oldest);
+    }
+    return false;
 }
 
 function checkTimeExactAchievements(date: Date) {
@@ -69,6 +103,9 @@ function checkTimeExactAchievements(date: Date) {
         const day = date.toISOString().slice(0, 10);
         store.addUnique("seenThreadIds", `midnight-${day}`, "midnightDays");
     }
+    if (h >= 0 && h < 4) {
+        store.bump("midnightWindowMessages");
+    }
 
     const today = date.toISOString().slice(0, 10);
     if (lastClockworkDay !== today) {
@@ -92,6 +129,17 @@ function checkAccountAgeAchievements() {
     if (years >= 20) { store.unlock("forever_here"); store.unlock("the_veteran"); }
 }
 
+function checkAvatarAchievements() {
+    if (!store.data.lastAvatarChangeTs) {
+        // First time we've ever checked: we don't know the true history, so
+        // start the clock now rather than guessing.
+        store.data.lastAvatarChangeTs = Date.now();
+    }
+    if (Date.now() - store.data.lastAvatarChangeTs >= YEAR_MS) {
+        store.unlock("recognizable");
+    }
+}
+
 function checkUserRelationshipAchievements() {
     const me = self();
     if (!me) return;
@@ -100,6 +148,7 @@ function checkUserRelationshipAchievements() {
     const userA = "1265514129066688629";
     const userB = "946294744089255956";
     const userBigEyebrow = "1063984916183916564";
+    const nandosUserId = "1289877867362254949";
 
     const friendIds = new Set<string>();
 
@@ -123,17 +172,107 @@ function checkUserRelationshipAchievements() {
     if (friendIds.has(userBigEyebrow)) {
         store.unlock("oh_hell_no");
     }
+
+    if (friendIds.has(nandosUserId)) {
+        store.unlock("nandos");
+    }
 }
 
-function onMessageCreate({ message, optimistic }: any) {
+function isDmLikeChannel(channelId: string) {
+    const type = ChannelStore.getChannel?.(channelId)?.type;
+    return type === 1 || type === 3; // DM or GROUP_DM
+}
+
+// ── Content-based formatting/fun achievements ──────────────────────────
+const KEYBOARD_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+
+function checkContentAchievements(content: string, flags: number | undefined) {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    if (content.length > 1000) store.unlock("wall_of_text");
+    if (content.length >= 2000) store.unlock("novel_writer_2k");
+
+    const hasBold = /\*\*[^*]+\*\*/.test(content);
+    const hasUnderline = /__[^_]+__/.test(content);
+    const hasStrike = /~~[^~]+~~/.test(content);
+    const hasItalic = /(?<!\*)\*[^*]+\*(?!\*)/.test(content) || /(?<!_)_[^_]+_(?!_)/.test(content);
+    if (hasBold && hasUnderline && hasStrike && hasItalic) store.unlock("markdown_master");
+
+    const words = trimmed.split(/\s+/);
+    if (words.length > 0 && words.every(w => /^\|\|\S+\|\|[.,!?]?$/.test(w))) {
+        store.unlock("spoiler_alert");
+    }
+
+    if (/```[a-zA-Z0-9_+-]+\n[\s\S]+?\n```/.test(content)) store.unlock("code_monkey");
+    if (/\|.+\|[ \t]*\n[ \t]*\|?[ \t:-]+\|/.test(content)) store.unlock("table_master");
+
+    if (/^>\s+\S/m.test(content)) store.bump("blockquotesSent");
+
+    if (content.length >= 20 && /[A-Z]/.test(content) && !/[a-z]/.test(content)) {
+        store.bump("allCapsMessages");
+    }
+
+    if (/^[A-Za-z0-9+/]{20,}={0,2}$/.test(trimmed) && trimmed.length % 4 === 0) {
+        store.bump("base64Messages");
+    }
+
+    const singleEmojiMatch = /^(<a?:\w+:\d+>)$/.test(trimmed)
+        || ([...trimmed].length === 1 && /\p{Extended_Pictographic}/u.test(trimmed));
+    if (singleEmojiMatch) store.bump("singleEmojiMessages");
+
+    if (/^#{1,3}\s+\S/m.test(content)) store.bump("headingMessages");
+    if (/^(\s*[-*•]\s+\S|\s*\d+\.\s+\S)/m.test(content)) store.bump("listMessages");
+    if (trimmed.endsWith("?")) store.bump("questionMessages");
+    if (trimmed.endsWith("!")) store.bump("exclamationMessages");
+
+    // Discord's message flag bit for "suppress notifications" (/silent)
+    if (flags != null && (flags & 4096) !== 0) store.bump("silentMessages");
+
+    if (/\bnondeez\b|\bnondas\b/i.test(content)) store.bump("nondeezMessages");
+
+    if (trimmed === "(╯°□°)╯︵ ┻━┻") store.bumpDaily("tableflipsToday", "tableflip");
+
+    if (content.length >= 100) {
+        const letters = content.toLowerCase().replace(/[^a-z]/g, "");
+        if (letters.length >= 100) {
+            for (const row of KEYBOARD_ROWS) {
+                if ([...letters].every(c => row.includes(c))) {
+                    store.unlock("broken_keyboard");
+                    break;
+                }
+            }
+        }
+    }
+
+    if (lastOopsAt && trimmed.toLowerCase() === "wrong chat" && Date.now() - lastOopsAt <= 15000) {
+        store.unlock("wrong_window");
+    }
+}
+
+function checkRapidFire(now: number) {
+    ownMessageTimestamps.push(now);
+    while (ownMessageTimestamps.length && now - ownMessageTimestamps[0] > 10 * 60 * 1000) {
+        ownMessageTimestamps.shift();
+    }
+    if (ownMessageTimestamps.length >= 100) store.unlock("rapid_fire");
+}
+
+function onMessageCreate({ message }: any) {
     if (!message?.author) return;
     const me = self();
     if (!me) return;
     const isOwn = message.author.id === me.id;
 
+    // Track approximate send-time for every message we see, for Reaction Speedrun.
+    const sentTs = message.timestamp ? new Date(message.timestamp).getTime() : Date.now();
+    if (message.id) {
+        anyMessageTimestamps.set(String(message.id), sentTs);
+        pruneMapBySize(anyMessageTimestamps, 2000);
+    }
+
     if (isOwn) {
-        const key = message.nonce ?? message.id;
-        if (recentOwnMessages.has(String(key)) && !optimistic) return;
+        if (alreadyProcessed(message)) return;
 
         store.bump("messagesSent");
         store.recordMessageForDay();
@@ -141,14 +280,25 @@ function onMessageCreate({ message, optimistic }: any) {
         const now = new Date();
         checkTimeExactAchievements(now);
         checkMilestoneMessageCounts();
+        checkContentAchievements(message.content ?? "", message.flags);
+        checkRapidFire(Date.now());
+
+        if (message.channel_id && isDmLikeChannel(message.channel_id)) {
+            store.bump("dmsSent");
+        }
 
         if (message.message_reference || message.messageReference) store.bump("repliesSent");
         if (message.attachments?.length) {
             for (const att of message.attachments) {
                 const name: string = att.filename?.toLowerCase() ?? "";
+                const size = Number(att.size) || 0;
                 if (name.endsWith(".gif")) store.bump("gifsSent");
                 else if (/\.(png|jpe?g|webp)$/.test(name)) store.bump("imagesUploaded");
+                else if (/\.(mp4|webm)$/.test(name)) store.bump("videosUploaded");
+                else if (/\.(mp3|wav)$/.test(name)) store.bump("audioUploaded");
+                else if (/\.(zip|rar|7z)$/.test(name)) store.bump("archivesUploaded");
                 store.bump("filesUploaded");
+                if (size > 0) store.bump("bytesUploaded", size);
             }
         }
         if (message.stickerItems?.length || message.sticker_items?.length) {
@@ -200,18 +350,25 @@ function checkMilestoneMessageCounts() {
     if (n === 2048) store.unlock("power_of_two");
 }
 
-function onMessageDelete({ id, channelId }: any) {
+function onMessageDelete({ id }: any) {
     const cached = recentOwnMessages.get(String(id));
     if (!cached) return;
     const elapsed = Date.now() - cached.ts;
+
+    // Any deletion of a message we know we sent counts toward "The Cleaner",
+    // regardless of how long it had been up.
+    store.bumpDaily("ownMessagesDeletedToday", "cleaner");
+    if (store.getStat("ownMessagesDeletedToday") === 404) store.unlock("the_cleaner");
+
     if (elapsed <= 3000) {
         store.unlock("oops");
+        lastOopsAt = Date.now();
         if (cached.hadMention) store.unlock("ghost_ping");
     }
     recentOwnMessages.delete(String(id));
 }
 
-function onReactionAdd({ userId, messageId, channelId, optimistic, emoji }: any) {
+function onReactionAdd({ userId, messageId, emoji }: any) {
     const me = self();
     if (!me) return;
     const cached = recentOwnMessages.get(String(messageId));
@@ -221,6 +378,11 @@ function onReactionAdd({ userId, messageId, channelId, optimistic, emoji }: any)
         if (cached && !cached.reactedByOther) {
             store.unlock("echo");
         }
+
+        const sentTs = anyMessageTimestamps.get(String(messageId));
+        if (sentTs != null && Date.now() - sentTs <= 1000) {
+            store.unlock("reaction_speedrun");
+        }
     } else if (cached) {
         cached.reactedByOther = true;
         store.bump("reactionsReceived");
@@ -229,6 +391,12 @@ function onReactionAdd({ userId, messageId, channelId, optimistic, emoji }: any)
         if (name === "❤️" || name === "❤") store.bump("heartReactionsReceived");
         if (name === "👍") store.bump("thumbsReactionsReceived");
     }
+}
+
+function onReactionRemove({ userId }: any) {
+    const me = self();
+    if (!me || userId !== me.id) return;
+    store.bump("reactionsRemoved");
 }
 
 function onVoiceStateUpdate({ voiceStates }: any) {
@@ -259,6 +427,9 @@ function onVoiceStateUpdate({ voiceStates }: any) {
             store.bump("streamSeconds", Math.floor((Date.now() - streamStartTime) / 1000));
             streamStartTime = null;
         }
+        if (vs.selfVideo) {
+            store.unlock("cam_on");
+        }
     }
 }
 
@@ -288,17 +459,36 @@ function onChannelCreate({ channel }: any) {
     if (channel?.isThread?.() || channel?.type === 11 || channel?.type === 12) {
         store.addUnique("seenThreadIds", channel.id, "uniqueThreadsParticipated");
     }
+    if (channel?.type === 3) {
+        store.bump("groupDMsCreated");
+    }
 }
 
 function onUserUpdate({ user }: any) {
     const me = self();
     if (!me || user.id !== me.id) return;
-    const key = "lastAvatarHash";
-    const prev = (store.data.stats as any)[key + "_marker"];
-    if (prev !== undefined && user.avatar && prev !== user.avatar) {
+
+    if (user.avatar && store.data.lastAvatarHash !== undefined && store.data.lastAvatarHash !== user.avatar) {
         store.bump("avatarChanges");
+        store.data.lastAvatarChangeTs = Date.now();
     }
-    (store.data.stats as any)[key + "_marker"] = user.avatar;
+    store.data.lastAvatarHash = user.avatar;
+
+    if (user.avatarDecorationData || user.avatar_decoration_data) {
+        store.unlock("profile_decorator");
+    }
+}
+
+function onGuildMemberUpdate(e: any) {
+    const me = self();
+    if (!me) return;
+    const userId = e?.user?.id ?? e?.member?.user?.id;
+    if (userId !== me.id) return;
+    const guildId = e.guildId ?? e.guild_id;
+    if (!guildId) return;
+
+    store.bump("nicknameChanges");
+    store.addUnique("seenNicknameGuildIds", guildId, "uniqueNicknameGuilds");
 }
 
 function onPollVoteAdd({ userId }: any) {
@@ -338,50 +528,31 @@ export default definePlugin({
     settings,
 
     patches: [
-        // DM Sidebar Patch: Places the achievements button under Shop/Quests
+        // Header toolbar icon. This targets the same stable "toolbar / mobileToolbar"
+        // destructure that every actively-maintained toolbar-icon plugin (e.g.
+        // MessageLoggerEnhanced) hooks into, instead of guessing at brittle,
+        // frequently-renamed class-name strings like "privateChannels" - that's
+        // why the button previously stopped showing up after a Discord update.
         {
-            find: 'className:"privateChannels"',
+            find: /toolbar:\i,mobileToolbar:\i/,
             replacement: {
-                match: /(children:\[)(.*?\bNitro\b.*?|\bShop\b.*?|\bQuests\b.*?)(?=,)/,
-                replace: "$1$2,$self.renderSidebarButton()"
+                match: /(function \i\(\i\){)(.{1,200}toolbar.{1,100}mobileToolbar)/,
+                replace: "$1$self.addIconToToolBar(arguments[0]);$2"
             }
         },
-        // Fallback Private Channels selector patch
-        {
-            find: "private-channels-item",
-            replacement: {
-                match: /(children:\[)(.*?\bquests\b.*?|\bshop\b.*?)(?=\])/,
-                replace: "$1$2,$self.renderSidebarButton()"
-            }
-        },
-        // Header toolbar icon
-        {
-            find: "toolbar:function",
-            replacement: {
-                match: /(toolbar:function\(\)\{return)(\(0,\i\.jsxs?\)\(\i\.Fragment,\{children:)(\[)/,
-                replace: "$1$2$3$self.renderToolbarIcon(),"
-            }
-        },
-        // Bottom User Panel patch (inserts icon between avatar and mute)
-        {
-            find: "Account/UserPanel",
-            replacement: {
-                match: /(children:\[)(.*?\i\.avatar.*?,)(.*?mute)/,
-                replace: "$1$2$self.renderUserPanelButton(),$3"
-            }
-        }
     ],
 
-    renderToolbarIcon() {
-        return <AchievementToolbarIcon key="achievement-tracker-icon" />;
-    },
-
-    renderUserPanelButton() {
-        return <AchievementToolbarIcon key="achievement-tracker-user-panel-icon" />;
-    },
-
-    renderSidebarButton() {
-        return <AchievementSidebarButton key="achievement-tracker-sidebar-button" />;
+    addIconToToolBar(e: { toolbar: React.ReactNode[] | React.ReactNode; }) {
+        const icon = (
+            <ErrorBoundary noop={true} key="achievement-tracker-icon">
+                <AchievementToolbarIcon />
+            </ErrorBoundary>
+        );
+        if (Array.isArray(e.toolbar)) {
+            e.toolbar.unshift(icon);
+            return;
+        }
+        e.toolbar = [icon, e.toolbar];
     },
 
     commands: [
@@ -399,12 +570,14 @@ export default definePlugin({
         MESSAGE_CREATE: onMessageCreate,
         MESSAGE_DELETE: onMessageDelete,
         MESSAGE_REACTION_ADD: onReactionAdd,
+        MESSAGE_REACTION_REMOVE: onReactionRemove,
         VOICE_STATE_UPDATES: onVoiceStateUpdate,
         RELATIONSHIP_ADD: onRelationshipAdd,
         RELATIONSHIP_REMOVE: checkUserRelationshipAchievements,
         GUILD_CREATE: onGuildCreate,
         CHANNEL_CREATE: onChannelCreate,
         USER_UPDATE: onUserUpdate,
+        GUILD_MEMBER_UPDATE: onGuildMemberUpdate,
         MESSAGE_POLL_VOTE_ADD: onPollVoteAdd,
     },
 
@@ -412,6 +585,8 @@ export default definePlugin({
         await store.load();
         store.recordLogin();
         checkAccountAgeAchievements();
+        checkAvatarAchievements();
+        checkUserRelationshipAchievements();
         knownGuildIds = null;
 
         document.addEventListener("keydown", onGlobalKeydown, true);
@@ -419,12 +594,9 @@ export default definePlugin({
         // Render and mount the floating notification stack container
         mountNotificationStack();
 
-        setTimeout(() => {
-            checkUserRelationshipAchievements();
-        }, 3000);
-
         (this as any)._interval = setInterval(() => {
             checkAccountAgeAchievements();
+            checkAvatarAchievements();
             checkUserRelationshipAchievements();
         }, 1000 * 60 * 5);
     },

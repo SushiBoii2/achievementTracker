@@ -20,30 +20,46 @@ import { store } from "./dataStore";
 export const keybindRecordingState = { active: false };
 
 function FilePickerSetting() {
-    const path = settings.store.dataFilePath;
+    const Native = VencordNative.pluginHelpers.AchievementTracker as {
+        pickSaveFile(defaultPath?: string): Promise<string | null>;
+        pickOpenFile(): Promise<string | null>;
+        readFile(path: string): Promise<string | null>;
+        writeFile(path: string, data: string): Promise<boolean>;
+    };
 
-    async function pick() {
-        const Native = VencordNative.pluginHelpers.AchievementTracker as {
-            pickSaveFile(defaultPath?: string): Promise<string | null>;
-        };
-        const chosen = await Native.pickSaveFile(path || "vencord-achievements.json");
-        if (chosen) {
-            settings.store.dataFilePath = chosen;
-            await store.load();
-            await store.saveNow();
-            showToast("Achievement save file set to " + chosen, Toasts.Type.SUCCESS);
+    async function exportBackup() {
+        const chosen = await Native.pickSaveFile("vencord-achievements-backup.json");
+        if (!chosen) return;
+        const ok = await Native.writeFile(chosen, store.exportJson());
+        showToast(ok ? "Backup saved to " + chosen : "Failed to write backup", ok ? Toasts.Type.SUCCESS : Toasts.Type.FAILURE);
+    }
+
+    async function importBackup() {
+        const chosen = await Native.pickOpenFile();
+        if (!chosen) return;
+        try {
+            const raw = await Native.readFile(chosen);
+            if (!raw) throw new Error("File was empty or unreadable");
+            await store.importJson(raw);
+            showToast("Backup imported", Toasts.Type.SUCCESS);
+        } catch (e) {
+            console.error("[AchievementTracker] Import failed", e);
+            showToast("Failed to import backup", Toasts.Type.FAILURE);
         }
     }
 
     return (
         <Forms.FormSection>
-            <Forms.FormTitle tag="h3">Local Save File</Forms.FormTitle>
+            <Forms.FormTitle tag="h3">Backup & Restore</Forms.FormTitle>
             <Forms.FormText style={{ marginBottom: 8, opacity: 0.8 }}>
-                {path ? `Currently saving to: ${path}` : "No save file selected yet. Your progress will not persist until you pick one."}
+                Your progress is saved automatically and locally (nothing leaves your
+                computer) - no setup needed. These buttons are only for making a manual
+                backup file or restoring one, e.g. when moving to a new machine.
             </Forms.FormText>
-            <Button onClick={pick}>
-                {path ? "Change save file location" : "Choose save file location"}
-            </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+                <Button onClick={exportBackup}>Export backup...</Button>
+                <Button color={Button.Colors.PRIMARY} onClick={importBackup}>Import backup...</Button>
+            </div>
         </Forms.FormSection>
     );
 }
@@ -65,9 +81,9 @@ function QuickAccessSetting() {
 export const settings = definePluginSettings({
     dataFilePath: {
         type: OptionType.STRING,
-        description: "Path to the local JSON file achievement progress is saved to",
+        description: "Legacy: path to a pre-v2 save file, merged in once on first load then unused",
         default: "",
-        hidden: true, // edited only through the custom picker below, not the raw text box
+        hidden: true,
     },
     showNotifications: {
         type: OptionType.BOOLEAN,

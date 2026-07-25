@@ -5,9 +5,16 @@
  */
 
 import { openModal } from "@utils/modal";
-import { Tooltip } from "@webpack/common";
+import { findComponentByCodeLazy } from "@webpack";
 
 import { AchievementsModal } from "./AchievementsModal";
+
+// This is the same header-bar icon component Discord itself uses for the
+// Inbox/Help/etc icons (and that other toolbar-icon plugins like
+// MessageLoggerEnhanced use), so it automatically matches native spacing,
+// hover states, and mobile-toolbar behavior instead of us hand-rolling a
+// <div> that can drift out of sync with Discord's real styling.
+const HeaderBarIcon = findComponentByCodeLazy(".HEADER_BAR_BADGE_TOP:", '"aria-haspopup":');
 
 function TrophyIcon() {
     return (
@@ -22,29 +29,11 @@ function TrophyIcon() {
 
 export function AchievementToolbarIcon() {
     return (
-        <Tooltip text="Achievements">
-            {tooltipProps => (
-                <div
-                    {...tooltipProps}
-                    role="button"
-                    aria-label="Achievements"
-                    onClick={() => openModal(props => <AchievementsModal {...props} />)}
-                    style={{
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 24,
-                        height: 24,
-                        marginRight: 8,
-                        color: "var(--interactive-normal)",
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.color = "var(--interactive-hover)")}
-                    onMouseLeave={e => (e.currentTarget.style.color = "var(--interactive-normal)")}
-                >
-                    <TrophyIcon />
-                </div>
-            )}
-        </Tooltip>
+        <HeaderBarIcon
+            className="vc-achievement-tracker-toolbox-btn"
+            onClick={() => openModal(props => <AchievementsModal {...props} />)}
+            tooltip="Achievements"
+            icon={TrophyIcon}
+        />
     );
 }

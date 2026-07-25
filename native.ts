@@ -26,6 +26,16 @@ export async function pickSaveFile(_event: any, defaultPath?: string) {
     return result.filePath;
 }
 
+export async function pickOpenFile(_event: any) {
+    const result = await dialog.showOpenDialog({
+        title: "Choose an Achievement Tracker backup file to import",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+        properties: ["openFile"],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+}
+
 export async function readFile(_event: any, path: string) {
     try {
         return await fs.readFile(path, "utf-8");
